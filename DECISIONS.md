@@ -50,3 +50,11 @@
   3. When customer input is received, the mic is immediately muted while the agent processes tools and formulates a crisp reply.
   4. Once agent playback ends, the mic is unmuted again. This to-and-fro rhythm prevents speaker-to-mic echo loops and eliminates audio clipping.
 - **Brevity & Anti-Hallucination:** System prompt strictly caps turns at 1 to 2 sentences, forbids repetitive greetings or repeating customer names, and only allows repeating details when the customer explicitly asks *"Could you repeat that?"*.
+
+## 5. Customer Speech-to-Text (STT) Transmission & Silence Pacing
+
+- **Stale Closure in AudioWorklet onmessage (Root Cause & Fix):** In `VoiceSupportModal.tsx`, `workletNode.port.onmessage` captured `isMuted` by value in its closure during initial WebSocket connection when `isMuted` was `true`. Subsequent calls to `setIsMuted(false)` updated React state but left the worklet closure checking the stale `true`, causing every microphone frame to be dropped before WebSocket transmission. We introduced `isMutedRef`, `pushToTalkRef`, and `isPressingPTTRef` (`useRef`), synchronized them with React state, and updated the AudioWorklet message handler to read from refs.
+- **Web Audio Context Autoplay Resilience:** Added `ensureAudioResumed()` to unlock suspended AudioContexts on any user interaction (modal click, mic toggle, PTT hold, spacebar).
+- **AudioWorklet Chromium Graph Termination:** Routed worklet node through a 0-gain node into `audioCtx.destination` to ensure the audio processing graph remains continuously scheduled in Chromium without causing speaker echo/feedback.
+- **Gnani STT Inactivity Reconnect:** Gnani STT server drops idle connections after 60 seconds (`Session closed: no speech segment received for 60 seconds`). We updated `STTPipeline.send_audio` to detect inactive or closed connections and transparently reconnect before forwarding new audio frames.
+- **Pacing & Anti-Repetition Buffer:** Extended silence watchdog to a generous 35-second quiet buffer before any check-in, preventing unprompted repetitive reminders while the customer is thinking.

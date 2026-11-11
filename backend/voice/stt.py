@@ -35,6 +35,13 @@ class STTPipeline:
             logger.warning("[STT] Force fail flag is set.")
             return False
 
+        if self.client:
+            try:
+                await self.client.close()
+            except Exception:
+                pass
+            self.client = None
+
         for attempt in range(1, retry_count + 1):
             try:
                 logger.info(f"[STT] Connecting to Gnani STT (attempt {attempt}/{retry_count})...")
@@ -58,13 +65,19 @@ class STTPipeline:
         return False
 
     async def send_audio(self, pcm_frame: bytes) -> None:
-        """Send a 1,024-byte 16kHz PCM frame."""
-        if not self.is_connected or not self.client:
+        """Send a 1,024-byte 16kHz PCM frame with auto-reconnect if connection timed out."""
+        if self._closing:
             return
+        if not self.is_connected or not self.client:
+            logger.info("[STT] Connection inactive, reconnecting before sending audio...")
+            ok = await self.connect()
+            if not ok:
+                return
         try:
             await self.client.send_audio(pcm_frame)
         except Exception as exc:
             logger.warning(f"[STT] Failed to send audio: {exc}")
+            self.is_connected = False
 
     async def _listen_loop(self):
         if not self.client:
@@ -80,6 +93,8 @@ class STTPipeline:
                         self._handle_transcript_with_grace(text)
                 elif isinstance(event, StreamErrorEvent):
                     logger.error(f"[STT Error]: {event.message}")
+                    if "closed" in event.message.lower() or "session_end" in event.message.lower():
+                        self.is_connected = False
         except asyncio.CancelledError:
             pass
         except Exception as exc:

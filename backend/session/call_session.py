@@ -109,17 +109,17 @@ class CallSession:
 
     async def _silence_watchdog(self):
         try:
-            # Generous buffer: give the customer at least 25 seconds to process and answer without interruption
-            await asyncio.sleep(25.0)
+            # Generous buffer: give the customer at least 35 seconds to process and answer without interruption
+            await asyncio.sleep(35.0)
             if self.state in ["listening", "idle"] and not self.is_agent_speaking and not self.ended_at:
-                logger.info(f"[Session {self.session_id}] 25s patient check-in.")
+                logger.info(f"[Session {self.session_id}] 35s patient check-in.")
                 # Gentle check-in without repeating instructions
                 await self._play_tts_phrase("Take your time, I am right here whenever you are ready.")
 
-            # After 35 more seconds (total 60s of complete silence): graceful wrap-up
+            # After 35 more seconds (total 70s of complete silence): graceful wrap-up
             await asyncio.sleep(35.0)
             if self.state in ["listening", "idle"] and not self.is_agent_speaking and not self.ended_at:
-                logger.info(f"[Session {self.session_id}] 60s silence reached. Ending call gracefully.")
+                logger.info(f"[Session {self.session_id}] 70s silence reached. Ending call gracefully.")
                 await self._play_tts_phrase("Since I have not heard from you, I will let you go for now. You can call back anytime. Goodbye!")
                 await self.end_call()
         except asyncio.CancelledError:
@@ -371,7 +371,7 @@ class CallSession:
         if self.is_muted or self.state == "ended" or self.is_agent_speaking:
             return
         self.last_activity_at = time.time()
-        if self.stt and self.stt.is_connected:
+        if self.stt:
             await self.stt.send_audio(pcm_frame)
 
     async def confirm_action(self, action_id: str, decision: bool):

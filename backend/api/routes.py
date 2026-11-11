@@ -231,6 +231,7 @@ async def websocket_call_endpoint(websocket: WebSocket, session_id: str, token: 
 
                         elif event_type == "unmute":
                             session.is_muted = False
+                            session.is_agent_speaking = False
 
                         elif event_type == "confirm_action":
                             action_id = data.get("action_id", "")

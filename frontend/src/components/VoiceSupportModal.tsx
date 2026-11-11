@@ -24,6 +24,29 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
   const [pushToTalk, setPushToTalk] = useState(false);
   const [isPressingPTT, setIsPressingPTT] = useState(false);
 
+  // Synchronized refs to avoid stale closure in AudioWorklet onmessage callback
+  const isMutedRef = useRef(true);
+  const pushToTalkRef = useRef(false);
+  const isPressingPTTRef = useRef(false);
+
+  const updateMute = (muted: boolean) => {
+    isMutedRef.current = muted;
+    setIsMuted(muted);
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ event: muted ? 'mute' : 'unmute' }));
+    }
+  };
+
+  const updatePushToTalk = (ptt: boolean) => {
+    pushToTalkRef.current = ptt;
+    setPushToTalk(ptt);
+  };
+
+  const updateIsPressingPTT = (pressing: boolean) => {
+    isPressingPTTRef.current = pressing;
+    setIsPressingPTT(pressing);
+  };
+
   // Audio level & visualizer
   const [audioLevel, setAudioLevel] = useState(0);
 
@@ -66,6 +89,49 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
   useEffect(() => {
     transcriptBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript, agentTyping, currentToolAction]);
+
+  // Audio Context unlocker helper
+  const ensureAudioResumed = async () => {
+    try {
+      if (micAudioContextRef.current && micAudioContextRef.current.state === 'suspended') {
+        await micAudioContextRef.current.resume();
+      }
+      if (playbackAudioContextRef.current && playbackAudioContextRef.current.state === 'suspended') {
+        await playbackAudioContextRef.current.resume();
+      }
+    } catch (e) {}
+  };
+
+  // Keyboard spacebar listener for Push-to-Talk
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && pushToTalkRef.current && !e.repeat) {
+        const target = e.target as HTMLElement;
+        if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          ensureAudioResumed();
+          updateIsPressingPTT(true);
+        }
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && pushToTalkRef.current) {
+        const target = e.target as HTMLElement;
+        if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          updateIsPressingPTT(false);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   // 1. Initialize Support Session with Backend
   useEffect(() => {
@@ -155,18 +221,18 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
         if (msg.state === 'speaking') {
           setAgentTyping(false);
           // Turn-taking: Maya starts speaking -> mute customer mic automatically
-          setIsMuted(true);
+          updateMute(true);
         } else if (msg.state === 'listening') {
           // If in voice mode and playback queue has emptied, unmute customer mic
           if (initialMode === 'voice' && audioQueueRef.current.length === 0) {
-            setIsMuted(false);
+            updateMute(false);
           }
         }
         break;
 
       case 'user_transcript':
         // Customer finished utterance -> mute mic while agent processes
-        setIsMuted(true);
+        updateMute(true);
         setTranscript((prev) => [
           ...prev,
           {
@@ -183,7 +249,7 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
       case 'agent_sentence':
         setAgentTyping(false);
         // Ensure mic is muted during speech playback
-        setIsMuted(true);
+        updateMute(true);
         setTranscript((prev) => [
           ...prev,
           {
@@ -199,7 +265,7 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
       case 'agent_interrupted':
         clearAudioQueue();
         if (initialMode === 'voice') {
-          setIsMuted(false);
+          updateMute(false);
         }
         setTranscript((prev) => {
           if (prev.length === 0) return prev;
@@ -244,13 +310,13 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
         setCallState('ended');
         setCallSummary(msg.summary);
         clearAudioQueue();
-        setIsMuted(true);
+        updateMute(true);
         break;
 
       case 'error':
         if (msg.code === 'VOICE_UNAVAILABLE') {
           setWarningBanner('Voice audio is currently unavailable. Switched to typed chat mode.');
-          setIsMuted(true);
+          updateMute(true);
         } else {
           setWarningBanner(msg.user_message);
         }
@@ -264,6 +330,7 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
   // 4. Microphone AudioWorklet Setup (16kHz PCM capture in 1024-byte frames)
   const startMicPipeline = async () => {
     try {
+      if (micStreamRef.current) return;
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -289,11 +356,11 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
       const workletNode = new AudioWorkletNode(audioCtx, 'pcm-processor');
       workletNodeRef.current = workletNode;
 
-      // Handle raw PCM frames from worklet
+      // Handle raw PCM frames from worklet using refs to ensure live state
       workletNode.port.onmessage = (e) => {
         const pcmBuffer = e.data; // ArrayBuffer (1024 bytes)
         // Auto-mute: if muted, do not send audio to STT
-        if (isMuted || (pushToTalk && !isPressingPTT)) {
+        if (isMutedRef.current || (pushToTalkRef.current && !isPressingPTTRef.current)) {
           setAudioLevel(0);
           return;
         }
@@ -304,7 +371,8 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
           sum += Math.abs(int16s[i]);
         }
         const avg = sum / int16s.length;
-        setAudioLevel(Math.min(1.0, avg / 5000));
+        // Dynamic mic sensitivity for visualizer
+        setAudioLevel(Math.min(1.0, avg / 2500));
 
         // Send binary frame to backend WebSocket
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -314,11 +382,15 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
 
       const source = audioCtx.createMediaStreamSource(stream);
       source.connect(workletNode);
-      workletNode.connect(audioCtx.destination);
+      // Connect to a 0-gain node terminating at destination to keep AudioWorklet alive in Chromium without audio feedback
+      const muteGain = audioCtx.createGain();
+      muteGain.gain.setValueAtTime(0, audioCtx.currentTime);
+      workletNode.connect(muteGain);
+      muteGain.connect(audioCtx.destination);
     } catch (err: any) {
       console.warn('Microphone start error:', err);
       setWarningBanner('Microphone unavailable. Continuing in text chat mode.');
-      setIsMuted(true);
+      updateMute(true);
     }
   };
 
@@ -355,7 +427,7 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
     setAudioLevel(0.85);
 
     // Turn-taking: mic stays muted during speech
-    setIsMuted(true);
+    updateMute(true);
 
     source.onended = () => {
       audioQueueRef.current = audioQueueRef.current.filter((s) => s !== source);
@@ -364,7 +436,7 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
         // Playback has physically finished in user's speaker!
         // Automatically unmute customer's mic and allow them to speak
         if (initialMode === 'voice') {
-          setIsMuted(false);
+          updateMute(false);
         }
       }
     };
@@ -383,7 +455,7 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
   const triggerBargeIn = () => {
     clearAudioQueue();
     if (initialMode === 'voice') {
-      setIsMuted(false);
+      updateMute(false);
     }
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ event: 'barge_in' }));
@@ -399,7 +471,7 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
       triggerBargeIn();
     }
 
-    setIsMuted(true); // Customer just sent input, mute mic while Maya replies
+    updateMute(true); // Customer just sent input, mute mic while Maya replies
     wsRef.current.send(JSON.stringify({
       event: 'text_message',
       text: inputText.trim()
@@ -410,7 +482,7 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
   // 8. Confirm action card decision
   const handleConfirmDecision = (decision: boolean) => {
     if (!confirmationRequest || !wsRef.current) return;
-    setIsMuted(true);
+    updateMute(true);
     wsRef.current.send(JSON.stringify({
       event: 'confirm_action',
       action_id: confirmationRequest.action_id,
@@ -425,7 +497,7 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
       wsRef.current.send(JSON.stringify({ event: 'end_call' }));
     }
     clearAudioQueue();
-    setIsMuted(true);
+    updateMute(true);
     setCallState('ended');
   };
 
@@ -471,7 +543,10 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+    <div 
+      onClick={ensureAudioResumed}
+      className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in"
+    >
       <div className="w-full h-full sm:h-auto sm:max-h-[92vh] sm:max-w-2xl bg-white sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
         
         {/* Header */}
@@ -738,7 +813,10 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsMuted(!isMuted)}
+                  onClick={async () => {
+                    await ensureAudioResumed();
+                    updateMute(!isMutedRef.current);
+                  }}
                   className={`p-3 rounded-2xl font-bold flex items-center gap-2 transition ${
                     isMuted
                       ? 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
@@ -751,7 +829,10 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
 
                 <button
                   type="button"
-                  onClick={() => setPushToTalk(!pushToTalk)}
+                  onClick={async () => {
+                    await ensureAudioResumed();
+                    updatePushToTalk(!pushToTalkRef.current);
+                  }}
                   className={`px-3 py-2 rounded-xl text-xs font-bold border transition ${
                     pushToTalk
                       ? 'bg-indigo-600 text-white border-indigo-600'
@@ -777,10 +858,16 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
             {pushToTalk && (
               <button
                 type="button"
-                onMouseDown={() => setIsPressingPTT(true)}
-                onMouseUp={() => setIsPressingPTT(false)}
-                onTouchStart={() => setIsPressingPTT(true)}
-                onTouchEnd={() => setIsPressingPTT(false)}
+                onMouseDown={async () => {
+                  await ensureAudioResumed();
+                  updateIsPressingPTT(true);
+                }}
+                onMouseUp={() => updateIsPressingPTT(false)}
+                onTouchStart={async () => {
+                  await ensureAudioResumed();
+                  updateIsPressingPTT(true);
+                }}
+                onTouchEnd={() => updateIsPressingPTT(false)}
                 className={`w-full py-3 rounded-2xl text-xs font-bold uppercase tracking-wider transition select-none ${
                   isPressingPTT ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 }`}

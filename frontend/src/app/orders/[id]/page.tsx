@@ -10,7 +10,6 @@ import {
 import { Order } from '@/lib/types';
 import PreCallModal from '@/components/PreCallModal';
 import VoiceSupportModal from '@/components/VoiceSupportModal';
-import DemoPanel from '@/components/DemoPanel';
 
 export default function OrderDetailsPage() {
   const params = useParams();
@@ -248,9 +247,6 @@ export default function OrderDetailsPage() {
           onClose={() => setActiveCallMode(null)}
         />
       )}
-
-      {/* Demo Presenter Controls */}
-      <DemoPanel />
     </div>
   );
 }

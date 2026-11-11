@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 class CustomerProfile(BaseModel):
     id: str
@@ -65,4 +65,8 @@ class Order(BaseModel):
     voucher_issued: bool = False
     voucher_code: Optional[str] = None
     escalation_ticket: Optional[EscalationTicket] = None
+    replacement_requested: bool = False
+    replacement_id: Optional[str] = None
+    replacement_order_id: Optional[str] = None
+    replacement_details: Optional[Dict[str, Any]] = None
 

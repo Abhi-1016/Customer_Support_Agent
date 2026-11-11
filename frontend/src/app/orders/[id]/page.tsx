@@ -157,6 +157,13 @@ export default function OrderDetailsPage() {
                 <span>Delayed by {order.days_delayed} days beyond original ETA. Tap Speak to Support for instant voucher resolution.</span>
               </div>
             )}
+
+            {order.replacement_requested && (
+              <div className="mt-3 px-3 py-2 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                <span>Replacement Confirmed ({order.replacement_order_id}) • Reference {order.replacement_id}</span>
+              </div>
+            )}
           </div>
         </div>
 

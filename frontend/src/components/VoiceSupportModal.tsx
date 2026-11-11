@@ -3,9 +3,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, Mic, MicOff, Send, Check, PhoneOff, AlertCircle, Copy, 
-  Star, ChevronDown, Sparkles, MessageSquare, ShieldCheck, CheckCircle2 
+  Star, ChevronDown, Sparkles, MessageSquare, ShieldCheck, CheckCircle2,
+  Clock, MapPin, RefreshCw, MousePointerClick
 } from 'lucide-react';
-import { Order, CallState, TranscriptBubble, CallSummaryData } from '@/lib/types';
+import { Order, CallState, TranscriptBubble, CallSummaryData, InteractiveOptionsData, InteractiveOption } from '@/lib/types';
 import AudioVisualizer from './AudioVisualizer';
 
 interface VoiceSupportModalProps {
@@ -65,6 +66,9 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
     summary: string;
     details: any;
   } | null>(null);
+
+  // Multimodal In-Call UI Chips (P1)
+  const [interactiveOptions, setInteractiveOptions] = useState<InteractiveOptionsData | null>(null);
 
   // End of call summary
   const [callSummary, setCallSummary] = useState<CallSummaryData | null>(null);
@@ -242,6 +246,7 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
       case 'user_transcript':
         // Customer finished utterance -> mute mic while agent processes
         updateMute(true);
+        setInteractiveOptions(null);
         setTranscript((prev) => [
           ...prev,
           {
@@ -313,6 +318,10 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
           summary: msg.summary,
           details: msg.details || {}
         });
+        break;
+
+      case 'interactive_options':
+        setInteractiveOptions(msg);
         break;
 
       case 'call_summary':
@@ -508,6 +517,20 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
     setConfirmationRequest(null);
   };
 
+  // 8b. Multimodal Option Click (P1)
+  const handleSelectOption = (option: InteractiveOption) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    if (callState === 'speaking') {
+      triggerBargeIn();
+    }
+    updateMute(true);
+    setInteractiveOptions(null);
+    wsRef.current.send(JSON.stringify({
+      event: 'text_message',
+      text: option.value
+    }));
+  };
+
   // 9. End Call
   const handleEndCall = () => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -696,6 +719,48 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
             <div className="flex items-center gap-2 text-xs font-semibold text-indigo-600 bg-indigo-50/80 px-3 py-2 rounded-xl border border-indigo-100 w-fit animate-pulse">
               <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
               <span>{currentToolAction}</span>
+            </div>
+          )}
+
+          {/* Multimodal In-Call UI Chips (P1) */}
+          {interactiveOptions && (
+            <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200/80 shadow-sm space-y-3 animate-fade-in my-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-indigo-900 font-bold text-xs">
+                  <MousePointerClick className="w-4 h-4 text-indigo-600 animate-bounce" />
+                  <span>{interactiveOptions.title}</span>
+                </div>
+                <span className="text-[10px] text-indigo-600 bg-indigo-100/70 px-2 py-0.5 rounded-full font-semibold">
+                  Tap or Speak
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 pt-1">
+                {interactiveOptions.options.map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => handleSelectOption(opt)}
+                    className="flex flex-col items-start p-3 rounded-xl bg-white border border-indigo-200/60 hover:border-indigo-600 hover:shadow-md transition text-left group"
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-xs font-bold text-slate-800 group-hover:text-indigo-600 transition flex items-center gap-1.5">
+                        {interactiveOptions.kind === 'slot' && <Clock className="w-3.5 h-3.5 text-indigo-500" />}
+                        {interactiveOptions.kind === 'address' && <MapPin className="w-3.5 h-3.5 text-indigo-500" />}
+                        {interactiveOptions.kind === 'resolution' && <RefreshCw className="w-3.5 h-3.5 text-indigo-500" />}
+                        {opt.label}
+                      </span>
+                      <span className="text-[10px] font-bold text-indigo-500 opacity-0 group-hover:opacity-100 transition">
+                        Select →
+                      </span>
+                    </div>
+                    {opt.sublabel && (
+                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                        {opt.sublabel}
+                      </p>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

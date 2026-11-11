@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import json
 import logging
 import re
@@ -12,7 +13,8 @@ from ..schemas.session import TranscriptBubble, ActionRecord, CallSummary
 from ..schemas.ws_events import (
     ReadyEvent, StateEvent, UserTranscriptEvent, AgentTextDeltaEvent,
     AgentSentenceEvent, AgentInterruptedEvent, ToolStartedEvent, ToolResultEvent,
-    ConfirmationRequestEvent, AudioHeaderEvent, CallSummaryEvent, ErrorEvent, PongEvent
+    ConfirmationRequestEvent, AudioHeaderEvent, CallSummaryEvent, ErrorEvent, PongEvent,
+    InteractiveOptionsEvent, InteractiveOption
 )
 from ..agent.customer_agent import CustomerSupportAgent
 from ..voice.stt import STTPipeline
@@ -20,6 +22,86 @@ from ..voice.tts import TTSPipeline, VoiceUnavailableError
 from ..voice.chunker import SentenceChunker
 
 logger = logging.getLogger("call_session")
+
+def build_predictive_greeting_prompt(order: Order) -> str:
+    """Construct an empathetic, context-rich initial greeting prompt based on order telemetry."""
+    cust_name = order.customer.name.split()[0]
+    item_name = order.items[0].name if order.items else "your item"
+
+    # 1. Delayed order
+    if order.delayed or order.days_delayed > 0:
+        last_loc = order.tracking[-1].location if order.tracking else "the logistics hub"
+        delay_days = order.days_delayed or 2
+        return (
+            f"[System: Greet {cust_name}. Notice that their {item_name} is currently delayed by {delay_days} days at {last_loc}. "
+            f"Proactively acknowledge the delay in ONE crisp, empathetic sentence and ask if they are inquiring about the delivery timeline or would like to explore options. "
+            f"Keep it under 25 words. Do not ask for their order ID.]"
+        )
+
+    # 2. In Transit or Out for Delivery
+    if order.status == "In Transit":
+        last_status = order.tracking[-1].status.lower() if order.tracking else ""
+        if "out for delivery" in last_status:
+            return (
+                f"[System: Greet {cust_name}. Notice that their {item_name} is Out for Delivery today. "
+                f"In ONE crisp sentence, tell them the courier is out for delivery and ask if they have specific delivery instructions or need driver details. "
+                f"Keep it under 22 words.]"
+            )
+        else:
+            return (
+                f"[System: Greet {cust_name}. Notice that their {item_name} is in transit with delivery expected soon. "
+                f"In ONE crisp sentence, ask how you can assist with their shipment today. Keep it under 20 words.]"
+            )
+
+    # 3. Cancelled Order
+    if order.status == "Cancelled":
+        if order.already_refunded and order.refund_id:
+            return (
+                f"[System: Greet {cust_name}. Notice their order for {item_name} is cancelled and refund {order.refund_id} has been processed. "
+                f"Proactively ask in ONE sentence if they are checking on refund reflection or need something else. Keep it under 22 words.]"
+            )
+        return (
+            f"[System: Greet {cust_name}. Notice their order for {item_name} is cancelled. "
+            f"In ONE sentence, ask how you can assist with their cancelled order today. Keep it under 18 words.]"
+        )
+
+    # 4. Delivered Order
+    if order.status == "Delivered":
+        if order.replacement_requested and order.replacement_id:
+            return (
+                f"[System: Greet {cust_name}. Notice that a replacement order ({order.replacement_order_id}) has been booked. "
+                f"Ask in ONE sentence if they are inquiring about their exchange pickup or have a new question. Keep it under 20 words.]"
+            )
+        if order.pickup_scheduled:
+            return (
+                f"[System: Greet {cust_name}. Notice that a return pickup is already scheduled for their {item_name} (ID {order.pickup_scheduled.id}). "
+                f"Ask in ONE sentence if they need to check or modify the pickup or have another question. Keep it under 22 words.]"
+            )
+
+        del_date_str = "recently"
+        if order.delivered_on:
+            try:
+                dt = datetime.datetime.fromisoformat(order.delivered_on.replace("Z", "+00:00")).date()
+                del_date_str = dt.strftime("%B %d")
+            except Exception:
+                pass
+
+        if not order.returnable:
+            return (
+                f"[System: Greet {cust_name}. Notice their {item_name} was delivered on {del_date_str}. "
+                f"In ONE crisp sentence, ask how you can assist them with this purchase today. Keep it under 18 words.]"
+            )
+
+        return (
+            f"[System: Greet {cust_name}. Notice their {item_name} was delivered on {del_date_str}. "
+            f"In ONE crisp sentence, ask how the item is working for them or if they need assistance with a return or exchange. Keep it under 22 words.]"
+        )
+
+    # 5. Processing Order
+    return (
+        f"[System: Greet {cust_name}. Notice their order for {item_name} is currently being packed. "
+        f"In ONE crisp sentence, ask if they would like an update on dispatch or wish to make any changes. Keep it under 20 words.]"
+    )
 
 class CallSession:
     def __init__(self, session_id: str, order: Order, language: str = "en-IN"):
@@ -162,10 +244,8 @@ class CallSession:
         await self.send_json(ReadyEvent(session_id=self.session_id).model_dump())
         await self.set_state("listening")
 
-        # Warm start initial greeting - crisp 1-sentence opening
-        cust_first_name = self.order.customer.name.split()[0]
-        item_name = self.order.items[0].name if self.order.items else "your item"
-        initial_greeting_prompt = f"[System: Greet {cust_first_name} in exactly ONE short, friendly sentence about their {item_name} and ask how you can help. Keep it under 20 words. Do not repeat order details.]"
+        # Predictive context initial greeting tailored to order telemetry
+        initial_greeting_prompt = build_predictive_greeting_prompt(self.order)
         asyncio.create_task(self.process_agent_turn(initial_greeting_prompt, is_system_prompt=True))
         self.reset_silence_timer()
 
@@ -189,6 +269,10 @@ class CallSession:
         # Track references
         if "refund_id" in data:
             self.reference_ids["refund_id"] = data["refund_id"]
+        if "replacement_id" in data:
+            self.reference_ids["replacement_id"] = data["replacement_id"]
+        if "replacement_order_id" in data:
+            self.reference_ids["replacement_order_id"] = data["replacement_order_id"]
         if "pickup_id" in data:
             self.reference_ids["pickup_id"] = data["pickup_id"]
         if "voucher_code" in data:
@@ -345,12 +429,94 @@ class CallSession:
                 self.is_muted = False
                 await self.set_state("listening")
 
+                # Multimodal In-Call UI Chips (P1): evaluate if contextual options should be presented
+                if not is_system_prompt and full_reply_text:
+                    await self._evaluate_interactive_options(full_reply_text)
+
                 # Automatic conversation closure and feedback trigger
                 if not is_system_prompt and full_reply_text and self._check_should_close(utterance, prev_agent_utterance, full_reply_text):
                     logger.info(f"[Session {self.session_id}] Customer indicated closure ('{utterance}'). Closing session automatically.")
                     # Wait briefly so that client's speakers finish outputting the goodbye audio
                     await asyncio.sleep(2.5)
                     await self.end_call()
+
+    async def _evaluate_interactive_options(self, reply_text: str):
+        """Evaluate agent response text to present 1-tap interactive UI chips on the frontend."""
+        clean = reply_text.lower()
+
+        # 1. Resolution preference: Replacement vs Refund
+        if any(k in clean for k in ["replacement", "refund"]) and any(k in clean for k in ["prefer", "would you like", "choose", "option"]):
+            amount_str = f"₹{int(self.order.payment.amount)}"
+            await self.send_json(InteractiveOptionsEvent(
+                kind="resolution",
+                title="Select Your Preferred Resolution",
+                options=[
+                    InteractiveOption(
+                        id="opt_replace",
+                        label="Instant Replacement",
+                        sublabel="Free replacement item + hand-to-hand exchange",
+                        value="I prefer an instant replacement."
+                    ),
+                    InteractiveOption(
+                        id="opt_refund",
+                        label="Full Refund",
+                        sublabel=f"{amount_str} returned to your original payment method",
+                        value="I prefer a full refund."
+                    )
+                ]
+            ).model_dump())
+            return
+
+        # 2. Address confirmation
+        if "registered address" in clean or ("address" in clean and ("pick" in clean or "registered" in clean or "pick it up" in clean)):
+            addr = self.order.customer.address
+            await self.send_json(InteractiveOptionsEvent(
+                kind="address",
+                title="Confirm Pickup & Delivery Address",
+                options=[
+                    InteractiveOption(
+                        id="opt_reg_addr",
+                        label="Use Registered Address",
+                        sublabel=addr,
+                        value=f"Yes, please pick it up from my registered address: {addr}."
+                    ),
+                    InteractiveOption(
+                        id="opt_diff_addr",
+                        label="Use a Different Address",
+                        sublabel="Specify alternate location for pickup",
+                        value="I want to use a different address."
+                    )
+                ]
+            ).model_dump())
+            return
+
+        # 3. Slot / Date selection
+        if any(k in clean for k in ["preferred pickup", "time slot", "pickup day", "morning or afternoon", "pickup slot", "day and time"]):
+            await self.send_json(InteractiveOptionsEvent(
+                kind="slot",
+                title="Choose Pickup Time Slot",
+                options=[
+                    InteractiveOption(
+                        id="opt_tmrw_morn",
+                        label="Tomorrow Morning",
+                        sublabel="Thursday, Nov 12 • 9:00 AM - 12:00 PM",
+                        value="Tomorrow morning works best for me."
+                    ),
+                    InteractiveOption(
+                        id="opt_tmrw_aft",
+                        label="Tomorrow Afternoon",
+                        sublabel="Thursday, Nov 12 • 12:00 PM - 4:00 PM",
+                        value="Tomorrow afternoon works best for me."
+                    ),
+                    InteractiveOption(
+                        id="opt_friday_morn",
+                        label="Friday Morning",
+                        sublabel="Friday, Nov 13 • 9:00 AM - 12:00 PM",
+                        value="Friday morning works best for me."
+                    )
+                ]
+            ).model_dump())
+            return
 
     def _check_should_close(self, user_text: str, prev_agent_text: str, current_agent_reply: str) -> bool:
         """Detect if customer says 'that is not required' / 'no that's all' and call should automatically close."""
@@ -465,6 +631,8 @@ class CallSession:
             resolution = "abandoned"
 
         summary_parts = []
+        if "replacement_id" in self.reference_ids:
+            summary_parts.append(f"Instant replacement confirmed (ID: {self.reference_ids['replacement_id']}, Order: {self.reference_ids.get('replacement_order_id', 'Pending')})")
         if "refund_id" in self.reference_ids:
             summary_parts.append(f"Refund initiated (ID: {self.reference_ids['refund_id']})")
         if "pickup_id" in self.reference_ids:

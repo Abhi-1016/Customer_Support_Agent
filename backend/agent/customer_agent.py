@@ -59,6 +59,7 @@ class CustomerSupportAgent:
             self.order_tools.get_order_status,
             self.order_tools.process_refund,
             self.order_tools.schedule_pickup,
+            self.order_tools.order_replacement,
             self.order_tools.escalate_to_human,
             self.order_tools.issue_voucher,
             self.order_tools.cancel_order

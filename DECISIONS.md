@@ -83,3 +83,26 @@
   - Added intent and farewell detection in `CallSession`: when the customer indicates no further assistance is needed after Maya asks if there's anything else (e.g., *"That is not required"*, *"No, that's all"*, *"Nothing else"*), Maya speaks a crisp closing farewell thanking them and saying goodbye.
   - The session automatically ends (`await self.end_call()`) after delivering the farewell audio, immediately broadcasting `CallSummaryEvent`.
   - The frontend transitions to `ended` state without clearing the in-flight goodbye audio queue, smoothly displaying the Call Summary & Feedback Card with 1-to-5 star rating and receipt details.
+
+## 8. Superior Customer Experience: P1, P2 & P3 Implementation
+
+- **P1: Multimodal In-Call UI Chips (Voice + Interactive Option Cards):**
+  - *Design:* Speaking dates, slot windows, or addresses over voice can be error-prone or tiring. Added `InteractiveOptionsEvent` in `ws_events.py` and rendered dynamic 1-tap option cards in `VoiceSupportModal.tsx`.
+  - *Contextual Detection:* `CallSession._evaluate_interactive_options` analyzes the agent's turn and emits actionable chips for:
+    1. Resolution choice: *Instant Replacement* vs *Full Refund*.
+    2. Address choice: *Use Registered Address* vs *Use Different Address*.
+    3. Pickup time slot: *Tomorrow Morning (9 AM - 12 PM)*, *Tomorrow Afternoon (12 PM - 4 PM)*, or *Friday Morning*.
+  - *Multimodal Harmony:* The user can tap a chip OR speak naturally. Tapping triggers instant selection via WebSocket, advancing the voice dialogue without breaking conversational flow.
+
+- **P2: Predictive Context-Rich Openings (Zero-Explanation Calls):**
+  - *Design:* Customer shouldn't have to explain what our tracking systems already know. Implemented `build_predictive_greeting_prompt` in `backend/session/call_session.py`.
+  - *Telemetry Mapping:*
+    - **Delayed Orders (`order.delayed == True`):** Maya proactively acknowledges the delay and hub location, asking if they need updated delivery timing or cancellation.
+    - **Recently Delivered Orders:** Maya inquires how the product is performing and if any issue or exchange is needed.
+    - **Cancelled / Refunded Orders:** Maya proactively references the refund ID and asks if they are checking reflection status.
+    - **Out for Delivery Orders:** Maya informs them the courier is out today and asks for any specific delivery instructions.
+
+- **P3: Instant Replacement / Exchange Workflow:**
+  - *Design:* When items arrive damaged, many customers want a replacement unit, not a monetary refund.
+  - *Implementation:* Created `order_replacement` tool in `backend/tools/order_tools.py`, registered in `CustomerSupportAgent`, and added supporting fields to `Order` schemas.
+  - *Courier Hand-to-Hand Exchange:* Generates `replacement_id` (e.g. `RPL-XXXX`) and replacement order (`ORD-1001-RPL`), coordinates exchange pickup, and surfaces replacement receipts on the call summary card and order details page.

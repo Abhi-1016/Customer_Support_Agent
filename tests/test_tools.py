@@ -104,6 +104,37 @@ async def test_voucher_issuance_and_cap():
     assert v2["data"]["voucher_code"] == code
 
 @pytest.mark.asyncio
+async def test_order_replacement_success_and_idempotency():
+    ctx = ToolContext(session_id="test_sess", bound_order_id="ORD-1001")
+    tools = OrderTools(ctx)
+
+    # 1. Successful replacement booking
+    res = await tools.order_replacement(
+        order_id="ORD-1001",
+        reason="Left ear cup cracked",
+        pickup_date="2026-11-12",
+        address="Flat 402, Lotus Apartments, Indiranagar, Bengaluru",
+        time_window="afternoon"
+    )
+    assert res["ok"] is True
+    assert res["code"] == "SUCCESS"
+    assert "replacement_id" in res["data"]
+    assert "replacement_order_id" in res["data"]
+    assert res["data"]["replacement_order_id"] == "ORD-1001-RPL"
+
+    # 2. Idempotency on repeat call
+    res_repeat = await tools.order_replacement(
+        order_id="ORD-1001",
+        reason="Left ear cup cracked",
+        pickup_date="2026-11-12",
+        address="Flat 402, Lotus Apartments, Indiranagar, Bengaluru",
+        time_window="afternoon"
+    )
+    assert res_repeat["ok"] is True
+    assert res_repeat["code"] == "ALREADY_REPLACED"
+    assert res_repeat["data"]["replacement_id"] == res["data"]["replacement_id"]
+
+@pytest.mark.asyncio
 async def test_cancel_order_processing_only():
     # Processing order ORD-1007
     ctx1 = ToolContext(session_id="test_sess", bound_order_id="ORD-1007")

@@ -470,3 +470,127 @@ class OrderTools:
             }
         }
 
+    async def order_replacement(self, order_id: str, reason: str, pickup_date: str, address: str, time_window: str) -> Dict[str, Any]:
+        """Book a free instant replacement item with hand-to-hand courier exchange for a delivered, returnable item."""
+        scope_err = self._check_order_scope(order_id)
+        if scope_err:
+            return scope_err
+
+        order = await order_service.get_order(order_id)
+        if not order:
+            return {"ok": False, "code": "ORDER_NOT_FOUND", "message": "Order not found.", "data": {}}
+
+        if order.status != "Delivered":
+            return {
+                "ok": False,
+                "code": "ORDER_NOT_DELIVERED",
+                "message": f"Replacements can only be booked for delivered orders. Current status: {order.status}",
+                "data": {}
+            }
+
+        if not order.returnable:
+            return {
+                "ok": False,
+                "code": "NON_RETURNABLE",
+                "message": "This item is marked non-returnable and cannot be replaced.",
+                "data": {}
+            }
+
+        # Check return window (10 days)
+        if order.delivered_on:
+            del_dt = datetime.datetime.fromisoformat(order.delivered_on.replace("Z", "+00:00")).date()
+            if (self.ctx.today - del_dt).days > 10:
+                return {
+                    "ok": False,
+                    "code": "OUTSIDE_RETURN_WINDOW",
+                    "message": "The 10-day return and replacement window for this order has expired.",
+                    "data": {}
+                }
+
+        # Validate time window
+        norm_window = time_window.strip().lower()
+        if norm_window not in ["morning", "afternoon", "evening"]:
+            return {
+                "ok": False,
+                "code": "INVALID_TIME_WINDOW",
+                "message": "Please choose a valid time slot: morning (9 AM - 12 PM), afternoon (12 PM - 4 PM), or evening (4 PM - 8 PM).",
+                "data": {}
+            }
+
+        # Validate date
+        is_valid_date, date_msg = validate_pickup_date(pickup_date, self.ctx.today)
+        if not is_valid_date:
+            return {
+                "ok": False,
+                "code": "INVALID_DATE",
+                "message": date_msg,
+                "data": {"suggested_slots": get_next_available_slots(self.ctx.today, pickup_date)}
+            }
+
+        # Validate address non-empty
+        if not address or len(address.strip()) < 5:
+            return {
+                "ok": False,
+                "code": "INVALID_ADDRESS",
+                "message": "Please provide a complete pickup and delivery address for the exchange.",
+                "data": {}
+            }
+
+        # Idempotent check
+        if order.replacement_requested and order.replacement_id:
+            return {
+                "ok": True,
+                "code": "ALREADY_REPLACED",
+                "message": f"Replacement order {order.replacement_order_id} is already confirmed with reference {order.replacement_id}.",
+                "data": {
+                    "replacement_id": order.replacement_id,
+                    "replacement_order_id": order.replacement_order_id,
+                    "pickup_date": pickup_date,
+                    "window": norm_window,
+                    "address": address,
+                    "is_duplicate": True
+                }
+            }
+
+        replacement_id = f"RPL-{uuid.uuid4().hex[:6].upper()}"
+        replacement_order_id = f"{order.id}-RPL"
+        pickup_id = f"PKP-{uuid.uuid4().hex[:6].upper()}"
+
+        pickup_details = PickupDetails(
+            id=pickup_id,
+            date=pickup_date,
+            window=norm_window,
+            address=address,
+            courier_note="Hand-to-hand exchange: courier will deliver replacement and collect defective unit."
+        )
+
+        order.replacement_requested = True
+        order.replacement_id = replacement_id
+        order.replacement_order_id = replacement_order_id
+        order.pickup_scheduled = pickup_details
+        order.replacement_details = {
+            "replacement_id": replacement_id,
+            "replacement_order_id": replacement_order_id,
+            "pickup_id": pickup_id,
+            "date": pickup_date,
+            "window": norm_window,
+            "address": address,
+            "reason": reason
+        }
+        await order_service.save_order(order)
+
+        return {
+            "ok": True,
+            "code": "SUCCESS",
+            "message": f"Replacement order {replacement_order_id} has been created (Reference {replacement_id}). Pickup and exchange is scheduled for {pickup_date} during {norm_window}.",
+            "data": {
+                "replacement_id": replacement_id,
+                "replacement_order_id": replacement_order_id,
+                "pickup_id": pickup_id,
+                "date": pickup_date,
+                "window": norm_window,
+                "address": address,
+                "courier_note": "Hand-to-hand exchange: courier will deliver replacement and collect defective unit."
+            }
+        }
+

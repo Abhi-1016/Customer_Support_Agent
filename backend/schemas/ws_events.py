@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, Literal, List
 
 # --- Client to Server Messages ---
 class ClientEvent(BaseModel):
@@ -78,6 +78,18 @@ class ConfirmationRequestEvent(ServerEvent):
     action_id: str
     summary: str
     details: Dict[str, Any]
+
+class InteractiveOption(BaseModel):
+    id: str
+    label: str
+    sublabel: Optional[str] = None
+    value: str
+
+class InteractiveOptionsEvent(ServerEvent):
+    event: Literal["interactive_options"] = "interactive_options"
+    kind: Literal["address", "slot", "resolution", "reason"]
+    title: str
+    options: List[InteractiveOption]
 
 class AudioHeaderEvent(ServerEvent):
     event: Literal["audio_header"] = "audio_header"

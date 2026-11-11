@@ -58,3 +58,12 @@
 - **AudioWorklet Chromium Graph Termination:** Routed worklet node through a 0-gain node into `audioCtx.destination` to ensure the audio processing graph remains continuously scheduled in Chromium without causing speaker echo/feedback.
 - **Gnani STT Inactivity Reconnect:** Gnani STT server drops idle connections after 60 seconds (`Session closed: no speech segment received for 60 seconds`). We updated `STTPipeline.send_audio` to detect inactive or closed connections and transparently reconnect before forwarding new audio frames.
 - **Pacing & Anti-Repetition Buffer:** Extended silence watchdog to a generous 35-second quiet buffer before any check-in, preventing unprompted repetitive reminders while the customer is thinking.
+
+## 6. Elimination of Duplicate Instruction Delivery
+
+- **Callback Closure Multiplier Bug (Root Cause & Fix):** In `CallSession.process_agent_turn`, `self.agent.on_text_delta` was temporarily wrapped by a turn-specific `delta_handler` to feed streaming tokens into `self.chunker`. However, this wrapper was never restored back to `self._on_agent_text_delta` at the end of the turn. Consequently, each new turn wrapped the previous turn's wrapper: in Turn 2, every token delta was dispatched twice; in Turn 3, three times. This caused the sentence chunker to receive duplicated tokens and queue duplicate identical instructions (e.g., `'Should we pick them up from your registered address?...'` synthesized back-to-back).
+- **Turn Isolation & Guaranteed Handler Reset:**
+  1. We made `self.agent.on_text_delta` reset back to `self._on_agent_text_delta` in a `finally` block on every turn.
+  2. Each turn now initializes a brand new `SentenceChunker()` instance to prevent buffer leakage between conversational turns.
+  3. Added deduplication inside `tts_worker`: identical instruction sentences within a single turn are rejected (`spoken_sentences = set()`), guaranteeing that an instruction is synthesized and spoken one and only once.
+  4. Added `self._tts_lock = asyncio.Lock()` around `_play_tts_phrase` so tool filler phrases and LLM reply sentences cannot interleave over the WebSocket.

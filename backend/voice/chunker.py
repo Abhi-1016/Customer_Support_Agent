@@ -4,7 +4,8 @@ from typing import AsyncIterator, List
 # Common abbreviations that should NOT trigger a sentence split
 ABBREVIATIONS = {
     "mr.", "mrs.", "ms.", "dr.", "prof.", "sr.", "jr.",
-    "e.g.", "i.e.", "vs.", "approx.", "etc.", "no.", "rs.", "st."
+    "e.g.", "i.e.", "vs.", "approx.", "etc.", "no.", "rs.", "st.",
+    "rd.", "ave.", "blvd.", "apt.", "ste.", "bldg.", "fl.", "ln."
 }
 
 class SentenceChunker:

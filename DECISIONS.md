@@ -67,3 +67,19 @@
   2. Each turn now initializes a brand new `SentenceChunker()` instance to prevent buffer leakage between conversational turns.
   3. Added deduplication inside `tts_worker`: identical instruction sentences within a single turn are rejected (`spoken_sentences = set()`), guaranteeing that an instruction is synthesized and spoken one and only once.
   4. Added `self._tts_lock = asyncio.Lock()` around `_play_tts_phrase` so tool filler phrases and LLM reply sentences cannot interleave over the WebSocket.
+
+## 7. Voice Delivery Nuances & Automatic Call Closure
+
+- **Ensuring All Responses Are Spoken Aloud (Root Cause & Fix):**
+  - *Premature Mic Unmuting & Reverb Barge-In:* When the agent performed a tool check or spoke a multi-sentence turn (e.g. suggesting an address change), the first sentence or filler phrase finished playing in the browser before the second sentence arrived. The browser's `source.onended` immediately unmuted the customer's microphone without verifying that the backend was still speaking (`callState === 'speaking'`). The microphone captured acoustic room reverb from the speakers, which STT transcribed and interpreted as a barge-in, instantly halting TTS and cutting off the rest of the agent's spoken response while leaving the text in the transcript.
+  - *Fix:*
+    1. Added `callStateRef` in `VoiceSupportModal.tsx`: the microphone is strictly kept muted throughout `thinking` and `speaking` states.
+    2. `source.onended` now only unmutes if `callStateRef.current === 'listening'` and `audioQueue.length === 0`, with a 300ms acoustic grace period to dissipate speaker reverb.
+    3. `receive_pcm_frame` on backend drops mic frames if `self.state != 'listening'`, completely preventing room feedback from triggering false barge-ins during agent turns.
+    4. Added street and address abbreviations (`rd.`, `ave.`, `blvd.`, `apt.`, `ste.`, `bldg.`, `fl.`, `ln.`) to `SentenceChunker`.
+    5. Added a fallback synthesis guard in `CallSession.process_agent_turn`: if `not spoken_sentences and full_reply_text.strip()`, the full response is guaranteed to be synthesized and spoken.
+
+- **Automatic Conversation Closure & Feedback Window:**
+  - Added intent and farewell detection in `CallSession`: when the customer indicates no further assistance is needed after Maya asks if there's anything else (e.g., *"That is not required"*, *"No, that's all"*, *"Nothing else"*), Maya speaks a crisp closing farewell thanking them and saying goodbye.
+  - The session automatically ends (`await self.end_call()`) after delivering the farewell audio, immediately broadcasting `CallSummaryEvent`.
+  - The frontend transitions to `ended` state without clearing the in-flight goodbye audio queue, smoothly displaying the Call Summary & Feedback Card with 1-to-5 star rating and receipt details.

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from typing import Optional, List, Dict, Any
@@ -63,6 +64,7 @@ class CallSession:
         # Turn concurrency lock
         self._turn_lock = asyncio.Lock()
         self._tts_lock = asyncio.Lock()
+        self.last_agent_text: str = ""
 
     async def attach_ws(self, websocket: WebSocket):
         """Attach a WebSocket connection. If another WS was attached, disconnect it cleanly."""
@@ -262,6 +264,7 @@ class CallSession:
             await self.set_state("thinking")
             agent_bubble_id = f"msg-{uuid.uuid4().hex[:6]}"
             full_reply_text = ""
+            prev_agent_utterance = self.last_agent_text
 
             try:
                 if not self.agent:
@@ -307,6 +310,12 @@ class CallSession:
                     # Signal end of sentences
                     await sentence_queue.put(None)
                     await tts_task
+
+                    # Fallback guard: ensure 100% of generated responses are spoken aloud
+                    if not spoken_sentences and full_reply_text.strip():
+                        logger.info(f"[Session {self.session_id}] Fallback guard: synthesizing complete reply text.")
+                        await self._play_tts_phrase(full_reply_text.strip())
+
                 finally:
                     # Always restore base delta handler so closures never nest across turns
                     self.agent.on_text_delta = self._on_agent_text_delta
@@ -322,6 +331,7 @@ class CallSession:
                 ).model_dump())
             finally:
                 if full_reply_text:
+                    self.last_agent_text = full_reply_text
                     bubble = TranscriptBubble(
                         id=agent_bubble_id,
                         speaker="agent",
@@ -334,6 +344,46 @@ class CallSession:
                 self.is_agent_speaking = False
                 self.is_muted = False
                 await self.set_state("listening")
+
+                # Automatic conversation closure and feedback trigger
+                if not is_system_prompt and full_reply_text and self._check_should_close(utterance, prev_agent_utterance, full_reply_text):
+                    logger.info(f"[Session {self.session_id}] Customer indicated closure ('{utterance}'). Closing session automatically.")
+                    # Wait briefly so that client's speakers finish outputting the goodbye audio
+                    await asyncio.sleep(2.5)
+                    await self.end_call()
+
+    def _check_should_close(self, user_text: str, prev_agent_text: str, current_agent_reply: str) -> bool:
+        """Detect if customer says 'that is not required' / 'no that's all' and call should automatically close."""
+        clean_user = re.sub(r'[^\w\s]', '', user_text.lower()).strip()
+        user_words = set(clean_user.split())
+
+        # If user is asking for an actual new action or topic, do not close
+        action_keywords = {"cancel", "refund", "return", "status", "change", "pickup", "delivery", "track", "address", "slot", "when", "how", "item"}
+        if action_keywords.intersection(user_words):
+            return False
+
+        closure_phrases = [
+            "not required", "that is not required", "thats not required", "not needed",
+            "that is not needed", "nothing else", "no that is all", "no thats all",
+            "no that will be all", "no thanks", "no thank you", "thats all", "that is all",
+            "im good", "i am good", "all good", "all set", "nope", "that's it", "thats it",
+            "nothing more", "nahin", "nahi", "kuch nahi", "bas yahi tha", "bas itna hi",
+            "bye", "goodbye", "good bye"
+        ]
+        is_closure_input = any(p in clean_user for p in closure_phrases) or clean_user in ["no", "nope", "nah", "na"]
+
+        prev_asked_else = any(p in prev_agent_text.lower() for p in [
+            "anything else", "anything that i can help", "anything i can help",
+            "anything i can assist", "help you with today", "aur koi sahayata",
+            "can i help with", "can i assist with"
+        ])
+
+        agent_said_farewell = any(w in current_agent_reply.lower() for w in [
+            "goodbye", "good bye", "have a wonderful day", "have a great day",
+            "take care", "alvida", "thank you for contacting", "thank you for reaching out"
+        ])
+
+        return (is_closure_input and prev_asked_else) or (is_closure_input and agent_said_farewell) or agent_said_farewell
 
     async def _play_tts_phrase(self, phrase: str):
         """Synthesize and stream audio chunks for a single sentence."""
@@ -358,12 +408,15 @@ class CallSession:
             ).model_dump())
 
             try:
+                chunk_count = 0
                 async for chunk in self.tts.synthesize_stream(phrase, lang=self.language):
                     if not self.is_agent_speaking:
                         break
+                    chunk_count += 1
                     await self.send_binary(chunk)
                     # Roughly estimate spoken characters
                     self.spoken_chars_estimate = min(len(phrase), self.spoken_chars_estimate + 10)
+                logger.info(f"[Session {self.session_id}] Spoken phrase emitted ({chunk_count} chunks): '{phrase[:50]}...'")
             except VoiceUnavailableError:
                 logger.warning(f"[Session {self.session_id}] Voice is unavailable, continuing in text.")
                 await self.send_json(ErrorEvent(
@@ -378,7 +431,7 @@ class CallSession:
 
     async def receive_pcm_frame(self, pcm_frame: bytes):
         """Receive mic frame from client and forward to STT."""
-        if self.is_muted or self.state == "ended" or self.is_agent_speaking:
+        if self.is_muted or self.state != "listening" or self.is_agent_speaking:
             return
         self.last_activity_at = time.time()
         if self.stt:

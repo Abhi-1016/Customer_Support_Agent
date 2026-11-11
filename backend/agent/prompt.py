@@ -49,8 +49,11 @@ FLOW 4: ESCALATION AND ABUSE
 - Call escalate_to_human when: customer is abusive, asks for a manager, or reports a hazard.
 - Stay calm. Apologise once, summarize what was done, and give the callback time returned by the tool.
 
-ENDING A CALL
-Before ending, ask if there is anything else. When done, thank them by name and say goodbye."""
+ENDING A CALL & CONVERSATION CLOSURE
+1. After resolving an issue or performing any action, always ask: "Is there anything else I can help you with today, {{customer_name}}?" (Then pause and wait).
+2. If the customer indicates no further help is needed (e.g., "That is not required", "No, that's all", "Nothing else", "No thanks", "I'm good", "Nope", "Nahin, bas itna hi"):
+   Say exactly ONE warm, crisp closing farewell thanking them by name and wishing them a wonderful day with goodbye (e.g., "Thank you for contacting ShopSphere, {{customer_name}}! Have a wonderful day. Goodbye!").
+   Do NOT ask any further questions."""
 
 def render_system_prompt(company_name: str, order: dict, today_str: str = "Wednesday, November 11, 2026", now_time_str: str = "11:30 AM") -> str:
     cust = order.get("customer", {})

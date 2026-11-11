@@ -25,6 +25,7 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
   const [isPressingPTT, setIsPressingPTT] = useState(false);
 
   // Synchronized refs to avoid stale closure in AudioWorklet onmessage callback
+  const callStateRef = useRef<CallState>('connecting');
   const isMutedRef = useRef(true);
   const pushToTalkRef = useRef(false);
   const isPressingPTTRef = useRef(false);
@@ -213,20 +214,28 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
   const handleServerEvent = (msg: any) => {
     switch (msg.event) {
       case 'ready':
+        callStateRef.current = 'listening';
         setCallState('listening');
         break;
 
       case 'state':
+        callStateRef.current = msg.state;
         setCallState(msg.state);
-        if (msg.state === 'speaking') {
+        if (msg.state === 'speaking' || msg.state === 'thinking' || msg.state === 'connecting') {
           setAgentTyping(false);
-          // Turn-taking: Maya starts speaking -> mute customer mic automatically
+          // Turn-taking: strictly mute mic while Maya is thinking or speaking
           updateMute(true);
         } else if (msg.state === 'listening') {
-          // If in voice mode and playback queue has emptied, unmute customer mic
+          // If in voice mode and playback queue has emptied, unmute customer mic after 300ms acoustic grace period
           if (initialMode === 'voice' && audioQueueRef.current.length === 0) {
-            updateMute(false);
+            setTimeout(() => {
+              if (audioQueueRef.current.length === 0 && callStateRef.current === 'listening') {
+                updateMute(false);
+              }
+            }, 300);
           }
+        } else if (msg.state === 'ended') {
+          updateMute(true);
         }
         break;
 
@@ -307,10 +316,14 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
         break;
 
       case 'call_summary':
+        callStateRef.current = 'ended';
         setCallState('ended');
         setCallSummary(msg.summary);
-        clearAudioQueue();
         updateMute(true);
+        // Ensure feedback card is smoothly scrolled into view
+        setTimeout(() => {
+          transcriptBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 150);
         break;
 
       case 'error':
@@ -434,9 +447,13 @@ export default function VoiceSupportModal({ order, initialMode, onClose }: Voice
       if (audioQueueRef.current.length === 0) {
         setAudioLevel(0);
         // Playback has physically finished in user's speaker!
-        // Automatically unmute customer's mic and allow them to speak
-        if (initialMode === 'voice') {
-          updateMute(false);
+        // Automatically unmute customer's mic only if backend is finished (listening)
+        if (initialMode === 'voice' && callStateRef.current === 'listening') {
+          setTimeout(() => {
+            if (audioQueueRef.current.length === 0 && callStateRef.current === 'listening') {
+              updateMute(false);
+            }
+          }, 300);
         }
       }
     };

@@ -62,6 +62,7 @@ class CallSession:
 
         # Turn concurrency lock
         self._turn_lock = asyncio.Lock()
+        self._tts_lock = asyncio.Lock()
 
     async def attach_ws(self, websocket: WebSocket):
         """Attach a WebSocket connection. If another WS was attached, disconnect it cleanly."""
@@ -266,41 +267,49 @@ class CallSession:
                 if not self.agent:
                     return
 
-                # Create sentence queue for pipelined TTS
+                # Create sentence queue for pipelined TTS with deduplication guard
                 sentence_queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
+                spoken_sentences = set()
 
                 async def tts_worker():
                     while True:
                         sentence = await sentence_queue.get()
                         if sentence is None:
                             break
-                        await self._play_tts_phrase(sentence)
+                        cleaned = sentence.strip()
+                        # Deduplication: never speak the exact same instruction/sentence twice in the same turn
+                        if cleaned and cleaned not in spoken_sentences:
+                            spoken_sentences.add(cleaned)
+                            await self._play_tts_phrase(cleaned)
                         sentence_queue.task_done()
 
                 tts_task = asyncio.create_task(tts_worker())
 
-                # Hook text delta to chunker
-                original_on_delta = self.agent.on_text_delta
+                # Hook text delta to a fresh SentenceChunker instance for this turn
+                chunker = SentenceChunker()
 
                 def delta_handler(delta: str):
-                    if original_on_delta:
-                        original_on_delta(delta)
-                    completed = self.chunker.add_token(delta)
+                    self._on_agent_text_delta(delta)
+                    completed = chunker.add_token(delta)
                     for s in completed:
                         sentence_queue.put_nowait(s)
 
                 self.agent.on_text_delta = delta_handler
 
-                # Execute LLM turn
-                full_reply_text = await self.agent.chat_turn(utterance)
+                try:
+                    # Execute LLM turn
+                    full_reply_text = await self.agent.chat_turn(utterance)
 
-                # Flush remaining sentence
-                for s in self.chunker.flush():
-                    sentence_queue.put_nowait(s)
+                    # Flush remaining sentence
+                    for s in chunker.flush():
+                        sentence_queue.put_nowait(s)
 
-                # Signal end of sentences
-                await sentence_queue.put(None)
-                await tts_task
+                    # Signal end of sentences
+                    await sentence_queue.put(None)
+                    await tts_task
+                finally:
+                    # Always restore base delta handler so closures never nest across turns
+                    self.agent.on_text_delta = self._on_agent_text_delta
 
             except asyncio.CancelledError:
                 logger.info(f"[Session {self.session_id}] Turn was cancelled.")
@@ -331,40 +340,41 @@ class CallSession:
         if not phrase or not phrase.strip():
             return
 
-        self.current_sentence_id = f"sent-{uuid.uuid4().hex[:6]}"
-        self.current_sentence_text = phrase
-        self.spoken_chars_estimate = 0
-        self.is_agent_speaking = True
-        await self.set_state("speaking")
+        async with self._tts_lock:
+            self.current_sentence_id = f"sent-{uuid.uuid4().hex[:6]}"
+            self.current_sentence_text = phrase
+            self.spoken_chars_estimate = 0
+            self.is_agent_speaking = True
+            await self.set_state("speaking")
 
-        # Emit sentence event to client
-        await self.send_json(AgentSentenceEvent(id=self.current_sentence_id, text=phrase).model_dump())
+            # Emit sentence event to client
+            await self.send_json(AgentSentenceEvent(id=self.current_sentence_id, text=phrase).model_dump())
 
-        # Emit audio header
-        await self.send_json(AudioHeaderEvent(
-            format="pcm16",
-            sample_rate=24000,
-            sentence_id=self.current_sentence_id
-        ).model_dump())
-
-        try:
-            async for chunk in self.tts.synthesize_stream(phrase, lang=self.language):
-                if not self.is_agent_speaking:
-                    break
-                await self.send_binary(chunk)
-                # Roughly estimate spoken characters
-                self.spoken_chars_estimate = min(len(phrase), self.spoken_chars_estimate + 10)
-        except VoiceUnavailableError:
-            logger.warning(f"[Session {self.session_id}] Voice is unavailable, continuing in text.")
-            await self.send_json(ErrorEvent(
-                code="VOICE_UNAVAILABLE",
-                user_message="Voice is currently unavailable; continuing in typed text.",
-                recoverable=True
+            # Emit audio header
+            await self.send_json(AudioHeaderEvent(
+                format="pcm16",
+                sample_rate=24000,
+                sentence_id=self.current_sentence_id
             ).model_dump())
-        except asyncio.CancelledError:
-            logger.info(f"[Session {self.session_id}] TTS playback cancelled for sentence {self.current_sentence_id}.")
-        except Exception as exc:
-            logger.warning(f"[Session {self.session_id}] TTS error: {exc}")
+
+            try:
+                async for chunk in self.tts.synthesize_stream(phrase, lang=self.language):
+                    if not self.is_agent_speaking:
+                        break
+                    await self.send_binary(chunk)
+                    # Roughly estimate spoken characters
+                    self.spoken_chars_estimate = min(len(phrase), self.spoken_chars_estimate + 10)
+            except VoiceUnavailableError:
+                logger.warning(f"[Session {self.session_id}] Voice is unavailable, continuing in text.")
+                await self.send_json(ErrorEvent(
+                    code="VOICE_UNAVAILABLE",
+                    user_message="Voice is currently unavailable; continuing in typed text.",
+                    recoverable=True
+                ).model_dump())
+            except asyncio.CancelledError:
+                logger.info(f"[Session {self.session_id}] TTS playback cancelled for sentence {self.current_sentence_id}.")
+            except Exception as exc:
+                logger.warning(f"[Session {self.session_id}] TTS error: {exc}")
 
     async def receive_pcm_frame(self, pcm_frame: bytes):
         """Receive mic frame from client and forward to STT."""

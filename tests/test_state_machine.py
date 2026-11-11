@@ -105,3 +105,43 @@ async def test_time_to_first_audio_benchmark():
     assert p50 < 2000
     assert p95 < 2000
 
+@pytest.mark.asyncio
+async def test_no_sentence_repetition_multi_turn():
+    """Verify that delta handlers and sentence queues never nest or duplicate across turns."""
+    order = await order_service.get_order("ORD-1001")
+    session = CallSession("test_repeat_sess", order, language="en-IN")
+
+    # Mock agent with chat_turn
+    class MockAgent:
+        def __init__(self):
+            self.on_text_delta = None
+        async def chat_turn(self, utterance):
+            msg = f"Response for {utterance}."
+            if self.on_text_delta:
+                self.on_text_delta(msg)
+            return msg
+
+    session.agent = MockAgent()
+    spoken_history = []
+    original_play = session._play_tts_phrase
+
+    async def mock_play(phrase):
+        spoken_history.append(phrase)
+
+    session._play_tts_phrase = mock_play
+
+    # Turn 1
+    await session.process_agent_turn("turn1")
+    # Turn 2
+    await session.process_agent_turn("turn2")
+    # Turn 3
+    await session.process_agent_turn("turn3")
+
+    # Exactly 3 phrases spoken (one per turn, no duplication)
+    assert spoken_history == [
+        "Response for turn1.",
+        "Response for turn2.",
+        "Response for turn3."
+    ]
+
+

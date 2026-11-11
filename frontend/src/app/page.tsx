@@ -7,6 +7,7 @@ import {
   ChevronRight, AlertTriangle, RefreshCw, ShoppingCart 
 } from 'lucide-react';
 import { Order } from '@/lib/types';
+import DemoPanel from '@/components/DemoPanel';
 
 export default function OrdersDashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -241,6 +242,9 @@ export default function OrdersDashboard() {
           })}
         </div>
       )}
+
+      {/* Presenter Demo Failure Control Panel */}
+      <DemoPanel />
     </div>
   );
 }

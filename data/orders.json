@@ -1,0 +1,381 @@
+[
+  {
+    "id": "ORD-1001",
+    "customer": {
+      "id": "CUST-401",
+      "name": "Aarav Sharma",
+      "phone": "+91 98765 43210",
+      "email": "aarav.sharma@example.com",
+      "address": "Flat 402, Lotus Apartments, Indiranagar, Bengaluru, KA 560038"
+    },
+    "items": [
+      {
+        "id": "ITEM-1",
+        "name": "Sony WH-1000XM5 Wireless Noise Cancelling Headphones",
+        "quantity": 1,
+        "price": 24990,
+        "image": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&auto=format&fit=crop&q=60",
+        "returnable": true
+      }
+    ],
+    "status": "Delivered",
+    "placed_at": "2026-11-06T10:30:00Z",
+    "delivered_on": "2026-11-09T14:15:00Z",
+    "return_window_end": "2026-11-19T23:59:59Z",
+    "returnable": true,
+    "already_refunded": false,
+    "refund_id": null,
+    "delayed": false,
+    "days_delayed": 0,
+    "eta": "2026-11-09T18:00:00Z",
+    "tracking": [
+      { "status": "Ordered", "location": "Bengaluru Warehouse", "timestamp": "2026-11-06T10:30:00Z" },
+      { "status": "Packed", "location": "Bengaluru Warehouse", "timestamp": "2026-11-07T09:00:00Z" },
+      { "status": "Shipped", "location": "Bengaluru Logistics Hub", "timestamp": "2026-11-07T18:45:00Z" },
+      { "status": "Out for Delivery", "location": "Indiranagar Hub", "timestamp": "2026-11-09T08:30:00Z" },
+      { "status": "Delivered", "location": "Customer Address", "timestamp": "2026-11-09T14:15:00Z" }
+    ],
+    "payment": {
+      "method": "UPI (Google Pay)",
+      "amount": 24990,
+      "subtotal": 24990,
+      "shipping": 0,
+      "tax": 0
+    },
+    "pickup_scheduled": null,
+    "voucher_issued": false,
+    "voucher_code": null,
+    "escalation_ticket": null
+  },
+  {
+    "id": "ORD-1002",
+    "customer": {
+      "id": "CUST-402",
+      "name": "Priya Nair",
+      "phone": "+91 91234 56789",
+      "email": "priya.nair@example.com",
+      "address": "B-12, Palm Meadows, Whitefield, Bengaluru, KA 560066"
+    },
+    "items": [
+      {
+        "id": "ITEM-2",
+        "name": "Espresso Coffee Maker with Milk Frother",
+        "quantity": 1,
+        "price": 8499,
+        "image": "https://images.unsplash.com/photo-1517668808822-9ebb02f2a0e6?w=500&auto=format&fit=crop&q=60",
+        "returnable": true
+      }
+    ],
+    "status": "In Transit",
+    "placed_at": "2026-11-01T11:00:00Z",
+    "delivered_on": null,
+    "return_window_end": null,
+    "returnable": true,
+    "already_refunded": false,
+    "refund_id": null,
+    "delayed": true,
+    "days_delayed": 6,
+    "eta": "2026-11-05T20:00:00Z",
+    "tracking": [
+      { "status": "Ordered", "location": "Mumbai Fulfillment Center", "timestamp": "2026-11-01T11:00:00Z" },
+      { "status": "Packed", "location": "Mumbai Fulfillment Center", "timestamp": "2026-11-01T16:00:00Z" },
+      { "status": "Shipped", "location": "Mumbai Logistics Hub", "timestamp": "2026-11-02T04:20:00Z" },
+      { "status": "In Transit (Delayed)", "location": "Pune Transit Hub (Weather delay)", "timestamp": "2026-11-04T12:00:00Z" }
+    ],
+    "payment": {
+      "method": "Credit Card (HDFC **** 4821)",
+      "amount": 8499,
+      "subtotal": 8499,
+      "shipping": 0,
+      "tax": 0
+    },
+    "pickup_scheduled": null,
+    "voucher_issued": false,
+    "voucher_code": null,
+    "escalation_ticket": null
+  },
+  {
+    "id": "ORD-1003",
+    "customer": {
+      "id": "CUST-403",
+      "name": "Rohan Patel",
+      "phone": "+91 98220 11223",
+      "email": "rohan.patel@example.com",
+      "address": "45, Shanti Niketan, Ellisbridge, Ahmedabad, GJ 380006"
+    },
+    "items": [
+      {
+        "id": "ITEM-3",
+        "name": "Mechanical Gaming Keyboard RGB Backlit",
+        "quantity": 1,
+        "price": 3299,
+        "image": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=500&auto=format&fit=crop&q=60",
+        "returnable": true
+      }
+    ],
+    "status": "Delivered",
+    "placed_at": "2026-10-14T15:20:00Z",
+    "delivered_on": "2026-10-17T11:30:00Z",
+    "return_window_end": "2026-10-27T23:59:59Z",
+    "returnable": true,
+    "already_refunded": false,
+    "refund_id": null,
+    "delayed": false,
+    "days_delayed": 0,
+    "eta": "2026-10-17T18:00:00Z",
+    "tracking": [
+      { "status": "Ordered", "location": "Surat Hub", "timestamp": "2026-10-14T15:20:00Z" },
+      { "status": "Packed", "location": "Surat Hub", "timestamp": "2026-10-15T08:00:00Z" },
+      { "status": "Shipped", "location": "Ahmedabad Delivery Center", "timestamp": "2026-10-16T06:00:00Z" },
+      { "status": "Delivered", "location": "Customer Address", "timestamp": "2026-10-17T11:30:00Z" }
+    ],
+    "payment": {
+      "method": "Debit Card (ICICI **** 9012)",
+      "amount": 3299,
+      "subtotal": 3299,
+      "shipping": 0,
+      "tax": 0
+    },
+    "pickup_scheduled": null,
+    "voucher_issued": false,
+    "voucher_code": null,
+    "escalation_ticket": null
+  },
+  {
+    "id": "ORD-1004",
+    "customer": {
+      "id": "CUST-404",
+      "name": "Ananya Roy",
+      "phone": "+91 97480 33445",
+      "email": "ananya.roy@example.com",
+      "address": "12B, Salt Lake Sector V, Kolkata, WB 700091"
+    },
+    "items": [
+      {
+        "id": "ITEM-4",
+        "name": "Organic Bamboo Fiber Innerwear Set (3-Pack)",
+        "quantity": 1,
+        "price": 1499,
+        "image": "https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?w=500&auto=format&fit=crop&q=60",
+        "returnable": false
+      }
+    ],
+    "status": "Delivered",
+    "placed_at": "2026-11-05T09:00:00Z",
+    "delivered_on": "2026-11-08T16:00:00Z",
+    "return_window_end": "2026-11-18T23:59:59Z",
+    "returnable": false,
+    "already_refunded": false,
+    "refund_id": null,
+    "delayed": false,
+    "days_delayed": 0,
+    "eta": "2026-11-08T18:00:00Z",
+    "tracking": [
+      { "status": "Ordered", "location": "Kolkata Hub", "timestamp": "2026-11-05T09:00:00Z" },
+      { "status": "Shipped", "location": "Salt Lake Depot", "timestamp": "2026-11-07T10:00:00Z" },
+      { "status": "Delivered", "location": "Customer Address", "timestamp": "2026-11-08T16:00:00Z" }
+    ],
+    "payment": {
+      "method": "Net Banking (SBI)",
+      "amount": 1499,
+      "subtotal": 1499,
+      "shipping": 0,
+      "tax": 0
+    },
+    "pickup_scheduled": null,
+    "voucher_issued": false,
+    "voucher_code": null,
+    "escalation_ticket": null
+  },
+  {
+    "id": "ORD-1005",
+    "customer": {
+      "id": "CUST-405",
+      "name": "Vikram Malhotra",
+      "phone": "+91 98111 22334",
+      "email": "vikram.m@example.com",
+      "address": "C-44, Defence Colony, New Delhi, DL 110024"
+    },
+    "items": [
+      {
+        "id": "ITEM-5",
+        "name": "Smart Fitness Watch with Heart Rate & SpO2 Monitor",
+        "quantity": 1,
+        "price": 4999,
+        "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60",
+        "returnable": true
+      }
+    ],
+    "status": "Delivered",
+    "placed_at": "2026-11-02T13:40:00Z",
+    "delivered_on": "2026-11-04T12:00:00Z",
+    "return_window_end": "2026-11-14T23:59:59Z",
+    "returnable": true,
+    "already_refunded": true,
+    "refund_id": "REF-83921",
+    "delayed": false,
+    "days_delayed": 0,
+    "eta": "2026-11-04T18:00:00Z",
+    "tracking": [
+      { "status": "Ordered", "location": "Delhi Hub", "timestamp": "2026-11-02T13:40:00Z" },
+      { "status": "Delivered", "location": "Customer Address", "timestamp": "2026-11-04T12:00:00Z" },
+      { "status": "Refund Processed", "location": "System", "timestamp": "2026-11-07T10:00:00Z" }
+    ],
+    "payment": {
+      "method": "Credit Card (Axis **** 3311)",
+      "amount": 4999,
+      "subtotal": 4999,
+      "shipping": 0,
+      "tax": 0
+    },
+    "pickup_scheduled": {
+      "id": "PKP-2026-1107",
+      "date": "2026-11-08",
+      "window": "morning",
+      "address": "C-44, Defence Colony, New Delhi, DL 110024"
+    },
+    "voucher_issued": false,
+    "voucher_code": null,
+    "escalation_ticket": null
+  },
+  {
+    "id": "ORD-1006",
+    "customer": {
+      "id": "CUST-406",
+      "name": "Kavita Reddy",
+      "phone": "+91 99490 88776",
+      "email": "kavita.reddy@example.com",
+      "address": "Plot 88, Jubilee Hills, Road No. 36, Hyderabad, TS 500033"
+    },
+    "items": [
+      {
+        "id": "ITEM-6",
+        "name": "Ceramic Non-Stick Cookware Set (5-Piece)",
+        "quantity": 1,
+        "price": 5999,
+        "image": "https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?w=500&auto=format&fit=crop&q=60",
+        "returnable": true
+      }
+    ],
+    "status": "Cancelled",
+    "placed_at": "2026-11-02T08:15:00Z",
+    "delivered_on": null,
+    "return_window_end": null,
+    "returnable": true,
+    "already_refunded": true,
+    "refund_id": "REF-71042",
+    "delayed": false,
+    "days_delayed": 0,
+    "eta": null,
+    "tracking": [
+      { "status": "Ordered", "location": "Hyderabad Warehouse", "timestamp": "2026-11-02T08:15:00Z" },
+      { "status": "Cancelled", "location": "Customer Request", "timestamp": "2026-11-03T09:30:00Z" },
+      { "status": "Refund Completed", "location": "Original Payment", "timestamp": "2026-11-05T14:00:00Z" }
+    ],
+    "payment": {
+      "method": "UPI (PhonePe)",
+      "amount": 5999,
+      "subtotal": 5999,
+      "shipping": 0,
+      "tax": 0
+    },
+    "pickup_scheduled": null,
+    "voucher_issued": false,
+    "voucher_code": null,
+    "escalation_ticket": null
+  },
+  {
+    "id": "ORD-1007",
+    "customer": {
+      "id": "CUST-407",
+      "name": "Siddharth Verma",
+      "phone": "+91 98200 44556",
+      "email": "siddharth.v@example.com",
+      "address": "A-701, Sea Breeze Towers, Bandra West, Mumbai, MH 400050"
+    },
+    "items": [
+      {
+        "id": "ITEM-7",
+        "name": "Portable Wireless Bluetooth Speaker Waterproof IPX7",
+        "quantity": 1,
+        "price": 2799,
+        "image": "https://images.unsplash.com/photo-1545454675-3531b543be5d?w=500&auto=format&fit=crop&q=60",
+        "returnable": true
+      }
+    ],
+    "status": "Processing",
+    "placed_at": "2026-11-10T14:30:00Z",
+    "delivered_on": null,
+    "return_window_end": null,
+    "returnable": true,
+    "already_refunded": false,
+    "refund_id": null,
+    "delayed": false,
+    "days_delayed": 0,
+    "eta": "2026-11-14T20:00:00Z",
+    "tracking": [
+      { "status": "Ordered", "location": "Mumbai Warehouse", "timestamp": "2026-11-10T14:30:00Z" },
+      { "status": "Payment Confirmed", "location": "Gateway", "timestamp": "2026-11-10T14:31:00Z" },
+      { "status": "Processing Order", "location": "Mumbai Warehouse", "timestamp": "2026-11-10T15:00:00Z" }
+    ],
+    "payment": {
+      "method": "Credit Card (HDFC **** 7712)",
+      "amount": 2799,
+      "subtotal": 2799,
+      "shipping": 0,
+      "tax": 0
+    },
+    "pickup_scheduled": null,
+    "voucher_issued": false,
+    "voucher_code": null,
+    "escalation_ticket": null
+  },
+  {
+    "id": "ORD-1008",
+    "customer": {
+      "id": "CUST-408",
+      "name": "Meera Joshi",
+      "phone": "+91 98450 66778",
+      "email": "meera.joshi@example.com",
+      "address": "14, Green Glen Layout, Bellandur, Bengaluru, KA 560103"
+    },
+    "items": [
+      {
+        "id": "ITEM-8",
+        "name": "Ultralight Ergonomic Running Shoes",
+        "quantity": 1,
+        "price": 4299,
+        "image": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=500&auto=format&fit=crop&q=60",
+        "returnable": true
+      }
+    ],
+    "status": "In Transit",
+    "placed_at": "2026-11-08T18:00:00Z",
+    "delivered_on": null,
+    "return_window_end": null,
+    "returnable": true,
+    "already_refunded": false,
+    "refund_id": null,
+    "delayed": false,
+    "days_delayed": 0,
+    "eta": "2026-11-11T19:00:00Z",
+    "tracking": [
+      { "status": "Ordered", "location": "Bengaluru Hub", "timestamp": "2026-11-08T18:00:00Z" },
+      { "status": "Packed", "location": "Bengaluru Hub", "timestamp": "2026-11-09T08:00:00Z" },
+      { "status": "Shipped", "location": "Koramangala Depot", "timestamp": "2026-11-10T12:00:00Z" },
+      { "status": "Out for Delivery", "location": "Bellandur Delivery Van", "timestamp": "2026-11-11T07:30:00Z" }
+    ],
+    "payment": {
+      "method": "Cash on Delivery",
+      "amount": 4299,
+      "subtotal": 4299,
+      "shipping": 0,
+      "tax": 0
+    },
+    "pickup_scheduled": null,
+    "voucher_issued": false,
+    "voucher_code": null,
+    "escalation_ticket": null
+  }
+]
+
